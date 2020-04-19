@@ -26,21 +26,25 @@ class ChatBot():
 		self.socket.send(opening_request)
 
 		readbuffer = ""
+		success = False
 
-		next_bytes = self.socket.recv(4096).decode("utf-8")
-		readbuffer += str(next_bytes)
-		lines = readbuffer.split("\r\n")
+		while not success:
+			next_bytes = self.socket.recv(4096).decode("utf-8")
+			readbuffer += str(next_bytes)
+			lines = readbuffer.split("\r\n")
 
-		for line in lines:
-			if "Invalid NICK" in line:
-				raise NotInitialisedException("Unable to log into Twitch: invalid username.")
-			if line == "":
+			if lines == [""]:
 				raise NotInitialisedException("Unable to log into Twitch: probably invalid password.")
-			print(line)
-			if "End of /NAMES list" in line: # keep loading until end of names list
-				break # quits the For.. although probably at the end of lines anyway
-		else:
-			raise NotInitialisedException("Unable to initialise bot: unknown response from Twitch.")
+
+			for line in lines:
+				if "Invalid NICK" in line:
+					raise NotInitialisedException("Unable to log into Twitch: invalid username.")
+				print(line)
+				if "End of /NAMES list" in line: # keep loading until end of names list
+					success = True
+					break # quits the For.. although probably at the end of lines anyway
+		
+		#	raise NotInitialisedException("Unable to initialise bot: unknown response from Twitch.")
 
 		self.initialised = True
 
