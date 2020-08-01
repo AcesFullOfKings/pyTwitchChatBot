@@ -118,8 +118,6 @@ class ChatBot():
 			for line in lines:
 				if self.debug:
 					print(line)
-				if "Invalid NICK" in line:
-					raise NotInitialisedException("Unable to log into Twitch: invalid username.")
 				if "CAP * ACK :twitch.tv/membership" in line:
 					self.granted_capabilities.append("membership")
 					if self.debug:
@@ -171,16 +169,19 @@ class ChatBot():
 				try:
 					if "tags" in self.granted_capabilities and line[0] == "@":
 						line = line[1:] # remove the @ from the beginning
-						msg_tags = line.split(":")[0].split(";")
+
+						# first section is all tags except last one, then we add the last one to the list by a different method
+						msg_tags = (";".join(line.split("PRIVMSG")[0].split(";")[:-1]) + ";" + (line.split("PRIVMSG")[0].split(":")[-2]).split(";")[-1]).split(";") # dumb that I have to do this
 						for tag in msg_tags:
-							key, val = tag.split("=")
-							message_dict[key] = val
+							if "=" in tag:
+								key, val = tag.split("=")
+								message_dict[key] = val
 						name = message_dict["display-name"]
 					else:
 						start_of_name = line.index(":") + 1
 						end_of_name = line.index("!")
 						message_dict["display-name"] = line[start_of_name:end_of_name].lower()
-					message_dict["message"] = ":".join((line.split(";")[-1]).split(":")[2:]) #everything after the last semicolon (end of metadata which may contain colons), then after the third colon
+					message_dict["message"] = ":".join(line.split("PRIVMSG")[1].split(":")[1:]) #everything after the PRIVMSG.. then after the subsequent colon
 				except (ValueError, IndexError):
 					if self.debug:
 						print("Unable to parse line as message.")
