@@ -106,6 +106,33 @@ class ChatBot():
 			#	raise NotInitialisedException("Unable to initialise bot: unknown response from Twitch.")
 
 
+		# Sometimes the above will initialise the bot completely.
+		# However if Capabilities are requested, sometimes they can come through in the wrong order
+		# So if we've not heard back the ACK for all of the requested capabilities, we try another receive:
+
+		if len(self.requested_capabilities) != len(self.granted_capabilities):
+			next_bytes = self.socket.recv(4096).decode("utf-8")
+			readbuffer += str(next_bytes)
+			lines = readbuffer.split("\r\n")
+
+			for line in lines:
+				if self.debug:
+					print(line)
+				if "Invalid NICK" in line:
+					raise NotInitialisedException("Unable to log into Twitch: invalid username.")
+				if "CAP * ACK :twitch.tv/membership" in line:
+					self.granted_capabilities.append("membership")
+					if self.debug:
+						print("Membership capability granted.")
+				if "CAP * ACK :twitch.tv/commands" in line:
+					self.granted_capabilities.append("commands")
+					if self.debug:
+						print("Commands capability granted.")
+				if "CAP * ACK :twitch.tv/tags" in line:
+					self.granted_capabilities.append("tags")
+					if self.debug:
+						print("Tags capability granted.")
+
 		self.initialised = True
 
 	def get_messages(self):
@@ -114,7 +141,8 @@ class ChatBot():
 		
 		Returns a list of new messages added to chat since the last call to this function, or since bot was initialised.
 		Each message object in the returned list is a dict of message metadata.
-		Metadata in the message dict includes: display-name, message, badges, and more.
+		Metadata in the message dict includes: message_type, display-name, message, badges, and more.
+		mesasge_type is "privmsg" for chat messages or "notice" for channel notices.
 		This function will listen for new messages and only return after a new message is received in the chat.
 		"""
 
@@ -137,8 +165,8 @@ class ChatBot():
 				self.send_pong()
 				continue
 
-			if "PRIVMSG" in line: # chat message from user (other message types are possible e.g. NOTICE)
-				message_dict = dict()
+			if "tmi.twitch.tv PRIVMSG #" in line: # chat message from user (other message types are possible e.g. NOTICE)
+				message_dict = {"message_type":"privmsg"}
 
 				try:
 					if "tags" in self.granted_capabilities and line[0] == "@":
@@ -159,6 +187,14 @@ class ChatBot():
 					continue # bad line
 
 				messages.append(message_dict)
+			if "tmi.twitch.tv NOTICE #" in line: # chat message from user (other message types are possible e.g. NOTICE)
+				"""@msg-id=color_changed :tmi.twitch.tv NOTICE #kaywee :Your color has been changed."""
+				message_dict = {"message_type":"notice"}
+				line = line[1:] # remove the @ from the beginning
+				message_dict["msg_id"]  = line.split(":")[0][:-1].split("=")[1]
+				message_dict["message"] = line.split(":")[-1]
+				messages.append(message_dict)
+
 		return messages
 
 	def send_message(self, msg):
