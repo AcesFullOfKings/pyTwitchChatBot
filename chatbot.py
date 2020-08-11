@@ -80,7 +80,7 @@ class ChatBot():
 			readbuffer += str(next_bytes)
 			lines = readbuffer.split("\r\n")
 
-			if lines == [""]:
+			if lines == [""]: # Shouldn't ever really get a blank response, but..
 				raise NotInitialisedException("Unable to log into Twitch: probably invalid password.")
 
 			for line in lines:
@@ -176,7 +176,6 @@ class ChatBot():
 							if "=" in tag:
 								key, val = tag.split("=")
 								message_dict[key] = val
-						name = message_dict["display-name"]
 					else:
 						start_of_name = line.index(":") + 1
 						end_of_name = line.index("!")
@@ -188,12 +187,24 @@ class ChatBot():
 					continue # bad line
 
 				messages.append(message_dict)
-			if "tmi.twitch.tv NOTICE #" in line: # chat message from user (other message types are possible e.g. NOTICE)
+			elif "tmi.twitch.tv NOTICE #" in line: # chat message from user (other message types are possible e.g. NOTICE)
 				"""@msg-id=color_changed :tmi.twitch.tv NOTICE #kaywee :Your color has been changed."""
 				message_dict = {"message_type":"notice"}
 				line = line[1:] # remove the @ from the beginning
 				message_dict["msg_id"]  = line.split(":")[0][:-1].split("=")[1]
 				message_dict["message"] = line.split(":")[-1]
+				messages.append(message_dict)
+
+			elif "tmi.twitch.tv USERNOTICE #" in line:
+				message_dict = {"message_type":"usernotice"}
+				line = line[1:]
+				msg_tags = (";".join(line.split("USERNOTICE")[0].split(";")[:-1]) + ";" + (line.split("USERNOTICE")[0].split(":")[-2]).split(";")[-1]).split(";") # dumb that I have to do this
+
+				for tag in msg_tags:
+					if "=" in tag:
+						key, val = tag.split("=")
+						message_dict[key] = val
+
 				messages.append(message_dict)
 
 		return messages
