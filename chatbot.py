@@ -38,7 +38,7 @@ class ChatBot():
 		if "debug" in kwargs:
 			self.debug = kwargs["debug"]
 			state = "on" if self.debug else "off"
-			print("Debbuging is turned " + state)
+			print("Debugging is turned " + state)
 
 		if "capabilities" in kwargs:
 			if "tags" in kwargs["capabilities"]:
@@ -144,8 +144,8 @@ class ChatBot():
 		This function will listen for new messages and only return after a new message is received in the chat.
 		"""
 
-		if not self.initialised:
-			raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
+		#if not self.initialised:
+		#	raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
 
 		next_bytes = self.socket.recv(2048).decode("utf-8")
 		lines = next_bytes.split("\r\n")
@@ -163,6 +163,12 @@ class ChatBot():
 				self.send_pong()
 				continue
 
+			"""
+			as I'm using "if x in line" to detect message types, in theory someone could send a message in chat
+			saying e.g. "hey guys tmi.twitch.tv NOTICE #", so that line would have both PRIVMSG and (e.g.) NOTICE
+			in it. By checking for PRIVMSG first, no matter the content of the message it will always be processed
+			as a chat message. Kind of like sanitising it.
+			"""
 			if "tmi.twitch.tv PRIVMSG #" in line: # chat message from user (other message types are possible e.g. NOTICE)
 				message_dict = {"message_type":"privmsg"}
 
@@ -179,7 +185,11 @@ class ChatBot():
 					else:
 						start_of_name = line.index(":") + 1
 						end_of_name = line.index("!")
-						message_dict["display-name"] = line[start_of_name:end_of_name].lower()
+						username = line[start_of_name:end_of_name].lower()
+						if 4 <= len(username) <= 25: #min and max lengths for username.. just a sanity check
+							message_dict["display-name"] = username
+						else:
+							raise ValueError("Unable to find username in line.")
 					message_dict["message"] = ":".join(line.split("PRIVMSG")[1].split(":")[1:]) #everything after the PRIVMSG.. then after the subsequent colon
 				except (ValueError, IndexError):
 					if self.debug:
@@ -206,6 +216,11 @@ class ChatBot():
 						message_dict[key] = val
 
 				messages.append(message_dict)
+			elif ":tmi.twitch.tv USERSTATE" in line:
+				pass
+			else:
+				with open("verbose log.txt", "a", encoding="utf-8") as f:
+					f.write(str(line) + "\n\n")
 
 		return messages
 
