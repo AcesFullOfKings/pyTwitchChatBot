@@ -1,5 +1,7 @@
-# pyTwitchBot
+# pyTwitchChatBot
 A simple chatbot for Twitch, in python.
+
+Requires Python 3.6+
 
 If you use my code, let me know! I'd love to see what you do with it.
 
