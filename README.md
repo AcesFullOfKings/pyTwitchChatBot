@@ -11,6 +11,8 @@ Example usage:
     my_bot = ChatBot(username, password, channel_name)
 
     while True:
-      new_messages = my_bot.get_messages()
-      for username, message in new_messages:
-        send_response(username, message)
+      new_messages = my_bot.get_messages() # waits for at least one new message to arrive, then returns a list of dicts representing new messages
+      for message in new_messages:
+        if message_dict["message_type"] == "privmsg":
+          user = message["display-name"].lower()
+		  message = message["message"]
