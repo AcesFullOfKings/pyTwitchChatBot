@@ -15,4 +15,4 @@ Example usage:
       for message in new_messages:
         if message_dict["message_type"] == "privmsg":
           user = message["display-name"].lower()
-		  message = message["message"]
+          message = message["message"]
