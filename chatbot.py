@@ -175,6 +175,7 @@ class ChatBot():
 			in it. By checking for PRIVMSG first, no matter the content of the message it will always be processed
 			as a chat message. Kind of like sanitising it. Sort of.
 			"""
+
 			message_dict = None # will be set to a dict below if message type is recognised
 
 			if "tmi.twitch.tv PRIVMSG #" in line: # chat message from user (other message types are possible e.g. NOTICE)
@@ -189,7 +190,7 @@ class ChatBot():
 						for tag in msg_tags:
 							if "=" in tag:
 								key, val = tag.split("=")
-								message_dict[key] = val
+								message_dict[key.strip()] = val.strip()
 					else:
 						start_of_name = line.index(":") + 1
 						end_of_name = line.index("!")
@@ -219,7 +220,7 @@ class ChatBot():
 				for tag in msg_tags:
 					if "=" in tag:
 						key, val = tag.split("=")
-						message_dict[key] = val
+						message_dict[key.strip()] = val.strip()
 
 			elif ":tmi.twitch.tv USERSTATE" in line:
 				message_dict = {"message_type":"userstate"}
@@ -233,9 +234,27 @@ class ChatBot():
 			elif ":tmi.twitch.tv RECONNECT" in line:
 				message_dict = {"message_type":"reconnect"}
 
+			elif ":tmi.twitch.tv CLEARMSG" in line: # single message was deleted
+				message_dict = {"message_type":"clearmsg"} 
+				if "tags" in self.granted_capabilities and line[0] == "@":
+					msg_tags = line[1:].split(":tmi.twitch.tv CLEARMSG")[0].split(";")
+					for tag in msg_tags:
+						if "=" in tag:
+							key, val = tag.split("=")
+							message_dict[key.strip()] = val.strip()
+
+			elif ":tmi.twitch.tv CLEARCHAT" in line: # clear all messages (from 1 user?)
+				message_dict = {"message_type":"clearchat"}
+				if "tags" in self.granted_capabilities and line[0] == "@":
+					msg_tags = line[1:].split(":tmi.twitch.tv CLEARCHAT")[0].split(";")
+					for tag in msg_tags:
+						if "=" in tag:
+							key, val = tag.split("=")
+							message_dict[key.strip()] = val.strip()
+
 			else:
 				with open("verbose log.txt", "a", encoding="utf-8") as f:
-					f.write(str(line) + "\n\n")
+					f.write("Unrecognised line received in Chatbot: " + str(line) + "\n\n")
 
 			if message_dict is not None:
 				messages.append(message_dict)
