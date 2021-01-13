@@ -84,7 +84,7 @@ class ChatBot():
 			readbuffer += str(next_bytes)
 			response_lines = readbuffer.split("\r\n")
 
-			if response_lines == [""]: # Shouldn't ever really get a blank response, but..
+			if response_lines == [""]: # this happens sometimes
 				raise NotInitialisedException("Unable to log into Twitch: no response received.")
 
 			for line in response_lines:
@@ -173,8 +173,10 @@ class ChatBot():
 			as I'm using "if x in line" to detect message types, in theory someone could send a message in chat
 			saying e.g. "hey guys tmi.twitch.tv NOTICE #", so that line would have both PRIVMSG and (e.g.) NOTICE
 			in it. By checking for PRIVMSG first, no matter the content of the message it will always be processed
-			as a chat message. Kind of like sanitising it.
+			as a chat message. Kind of like sanitising it. Sort of.
 			"""
+			message_dict = None # will be set to a dict below if message type is recognised
+
 			if "tmi.twitch.tv PRIVMSG #" in line: # chat message from user (other message types are possible e.g. NOTICE)
 				message_dict = {"message_type":"privmsg"}
 
@@ -202,14 +204,12 @@ class ChatBot():
 						print("Unable to parse line as message.")
 					continue # bad line
 
-				messages.append(message_dict)
 			elif "tmi.twitch.tv NOTICE #" in line: # chat message from user (other message types are possible e.g. NOTICE)
 				"""@msg-id=color_changed :tmi.twitch.tv NOTICE #kaywee :Your color has been changed."""
 				message_dict = {"message_type":"notice"}
 				line = line[1:] # remove the @ from the beginning
 				message_dict["msg_id"]  = line.split(":")[0][:-1].split("=")[1]
 				message_dict["message"] = line.split(":")[-1]
-				messages.append(message_dict)
 
 			elif "tmi.twitch.tv USERNOTICE #" in line:
 				message_dict = {"message_type":"usernotice"}
@@ -221,13 +221,24 @@ class ChatBot():
 						key, val = tag.split("=")
 						message_dict[key] = val
 
-				messages.append(message_dict)
 			elif ":tmi.twitch.tv USERSTATE" in line:
-				if self.debug:
-					print(line)
+				message_dict = {"message_type":"userstate"}
+
+			elif ":tmi.twitch.tv HOSTTARGET":
+				target = line.split(":")[2].split(" ")[0]
+				if target not in ["-", ""]
+					viewers = line.split(":")[2].split(" ")[1]
+					message_dict = {"message_type":"hosttarget", "target": target, "viewers": viewers}
+
+			elif ":tmi.twitch.tv RECONNECT" in line:
+				message_dict = {"message_type":"reconnect"}
+
 			else:
 				with open("verbose log.txt", "a", encoding="utf-8") as f:
 					f.write(str(line) + "\n\n")
+
+			if message_dict is not None:
+				messages.append(message_dict)
 
 		return messages
 
