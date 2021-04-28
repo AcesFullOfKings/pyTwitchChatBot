@@ -289,16 +289,20 @@ class ChatBot():
 		"""Send a message to the channel."""
 
 		msg = msg.replace("\r\n", "")
+		if len(msg) < 500:
+			bytes_message = ("PRIVMSG #" + self.channel + " :" + msg + "\r\n").encode('utf-8')
+		else:
+			chr_limit = 495
+			
+			chunks = [msg[i:i+chr_limit] for i in range(0, len(msg), chr_limit)]
+			for chunk in chunks:
+				bytes_message = ("PRIVMSG #" + self.channel + " :" + chunk + "\r\n").encode('utf-8')
 
-		bytes_message = "".encode('utf-8')
-		
-		for chunk in msg[::495]:
-			bytes_message += ("PRIVMSG #" + self.channel + " :" + chunk + "\r\n").encode('utf-8')
-
-		try:
-			self.socket.send(bytes_message)
-		except AttributeError:
-			raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
+				try:
+					self.socket.send(bytes_message)
+					sleep(0.2)
+				except AttributeError:
+					raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
 
 	def send_pong(self):
 		msg = "PONG :tmi.twitch.tv\r\n".encode('utf-8')
