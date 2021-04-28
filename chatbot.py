@@ -36,9 +36,10 @@ class ChatBot():
 		self.granted_capabilities = []
 
 		if "debug" in kwargs:
-			self.debug = kwargs["debug"]
-			state = "on" if self.debug else "off"
-			print("Debugging is turned " + state)
+			# only set debug mode if the debug flag is explicitly True, i.e. not for truthy objects such as non-empty strings.
+			self.debug = kwargs["debug"] is True 
+			if self.debug:
+				print(f"Debugging is turned on.")
 		else:
 			self.debug = False
 
@@ -56,8 +57,6 @@ class ChatBot():
 				if self.debug:
 					print("Requesting commands capability")
 		self._open_socket()
-
-		del self.requested_capabilities
 
 	def _open_socket(self):
 		self.socket = socket()
@@ -92,8 +91,9 @@ class ChatBot():
 					print(line)
 				if "Invalid NICK" in line:
 					raise NotInitialisedException("Unable to log into Twitch: invalid username.")
-				if "Improperly formatted auth" in line:
+				elif "Improperly formatted auth" in line:
 					raise NotInitialisedException("Unable to log into Twitch: login details are incorrect.")
+
 				if "CAP * ACK :twitch.tv/membership" in line:
 					self.granted_capabilities.append("membership")
 					if self.debug:
@@ -108,15 +108,12 @@ class ChatBot():
 						print("Tags capability granted.")
 				if "End of /NAMES list" in line: # keep loading until end of names list
 					success = True
-			#else: #for-else, not if-else
-			#	raise NotInitialisedException("Unable to initialise bot: unknown response from Twitch.")
-
 
 		# Sometimes the above will initialise the bot completely.
 		# However if Capabilities are requested, sometimes they can come through in the wrong order
 		# So if we've not heard back the ACK for all of the requested capabilities, we try another receive:
 
-		if len(self.requested_capabilities) != len(self.granted_capabilities): #not all requesed capabilities are granted
+		if len(self.requested_capabilities) != len(self.granted_capabilities): # not all requesed capabilities are granted
 			next_bytes = self.socket.recv(4096).decode("utf-8")
 			readbuffer += str(next_bytes)
 			response_lines = readbuffer.split("\r\n") # this might contain the first chat message - if so it won't be processed.
@@ -146,31 +143,32 @@ class ChatBot():
 		Returns a list of new messages added to chat since the last call to this function, or since bot was initialised.
 		Each message object in the returned list is a dict of message metadata.
 		Metadata in the message dict includes: message_type, display-name, message, badges, and more.
-		mesasge_type is "privmsg" for chat messages or "notice" for channel notices.
+		message_type is "privmsg" for chat messages or "notice" for channel notices. Twitch may send other message types too.
+		See https://dev.twitch.tv/docs/irc/commands for "command" message types (only sent if "commands" capability is enabled)
 		This function will listen for new messages and only return after a new message is received in the chat.
 		"""
 
 		#if not self.initialised:
 		#	raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
 
-		next_bytes = self.socket.recv(2048).decode("utf-8")
+		next_bytes = self.socket.recv(4096).decode("utf-8")
 		lines = next_bytes.split("\r\n")
-
-		while "" in lines:
-			lines.remove("")
 
 		messages = []
 
-	for line in lines:
+		for line in lines:
 			if self.debug:
 				print(line)
+
+			if line == "":
+				continue
 
 			if line[:4] == "PING":
 				self.send_pong()
 				continue
 
 			"""
-			as I'm using "if x in line" to detect message types, in theory someone could send a message in chat
+			As this uses "if x in line" to detect message types, in theory someone could send a message in chat
 			saying e.g. "hey guys tmi.twitch.tv NOTICE #", so that line would have both PRIVMSG and (e.g.) NOTICE
 			in it. By checking for PRIVMSG first, no matter the content of the message it will always be processed
 			as a chat message. Kind of like sanitising it. Sort of.
@@ -200,13 +198,13 @@ class ChatBot():
 						else:
 							raise ValueError("Unable to find username in line.")
 					message_dict["message"] = ":".join(line.split("PRIVMSG")[1].split(":")[1:]) # everything after the PRIVMSG.. then after the subsequent colon
-				except (ValueError, IndexError):
+				except (ValueError, IndexError) as ex:
 					if self.debug:
-						print("Unable to parse line as message.")
+						print(f"Unable to parse line as message: \n\n{line} \n\n{str(ex)}")
 					continue # bad line
 
-			elif "tmi.twitch.tv NOTICE #" in line: # chat message from user (other message types are possible e.g. NOTICE)
-				"""@msg-id=color_changed :tmi.twitch.tv NOTICE #kaywee :Your color has been changed."""
+			elif "tmi.twitch.tv NOTICE #" in line:
+				"""Example NOTICE message: @msg-id=color_changed :tmi.twitch.tv NOTICE #kaywee :Your color has been changed."""
 				message_dict = {"message_type":"notice"}
 				line = line[1:] # remove the @ from the beginning
 				message_dict["msg_id"]  = line.split(":")[0][:-1].split("=")[1]
@@ -214,16 +212,28 @@ class ChatBot():
 
 			elif "tmi.twitch.tv USERNOTICE #" in line:
 				message_dict = {"message_type":"usernotice"}
-				line = line[1:]
+				line = line[1:] # remove leading @
 				msg_tags = (";".join(line.split("USERNOTICE")[0].split(";")[:-1]) + ";" + (line.split("USERNOTICE")[0].split(":")[-2]).split(";")[-1]).split(";") # dumb that I have to do this
 
 				for tag in msg_tags:
-					if "=" in tag:
+					if "=" in tag: # sanity check - all should have key=value
 						key, val = tag.split("=")
 						message_dict[key.strip()] = val.strip()
 
 			elif ":tmi.twitch.tv USERSTATE" in line:
-				message_dict = {"message_type":"userstate"}
+				"""Example message:
+				@badge-info=subscriber/7;badges=moderator/1,subscriber/6;color=#FF69B4;display-name=RoboKaywee;
+				emote-sets=0,300374282,300542926,537206155,564265402,592920959,610186276;mod=1;subscriber=1;user-type=mod :tmi.twitch.tv USERSTATE #kaywee
+				"""
+				message_dict = {"message_type":"userstate"} # what info comes with this?
+
+				line = line[1:] # remove leading @
+				msg_tags = (";".join(line.split("USERSTATE")[0].split(";")[:-1]) + ";" + (line.split("USERSTATE")[0].split(":")[-2]).split(";")[-1]).split(";") # dumb that I have to do this
+
+				for tag in msg_tags:
+					if "=" in tag: # sanity check - all should have key=value
+						key, val = tag.split("=")
+						message_dict[key.strip()] = val.strip()
 
 			elif ":tmi.twitch.tv HOSTTARGET" in line:
 				target = line.split(":")[2].split(" ")[0]
@@ -231,8 +241,9 @@ class ChatBot():
 					viewers = line.split(":")[2].split(" ")[1]
 					message_dict = {"message_type":"hosttarget", "host_target": target, "viewers": viewers}
 
-			elif ":tmi.twitch.tv RECONNECT" in line:
-				message_dict = {"message_type":"reconnect"}
+			elif ":tmi.twitch.tv RECONNECT" in line: # a command to reconnect to chat
+				self.reset_socket() # reconnect to chat per twitch's request
+				continue # don't return this as a message type
 
 			elif ":tmi.twitch.tv CLEARMSG" in line: # single message was deleted
 				message_dict = {"message_type":"clearmsg"} 
@@ -248,10 +259,23 @@ class ChatBot():
 				if "tags" in self.granted_capabilities and line[0] == "@":
 					msg_tags = line[1:].split(":tmi.twitch.tv CLEARCHAT")[0].split(";")
 					for tag in msg_tags:
-						if "=" in tag:
+						if "=" in tag: # sanity check - all should have key=value
 							key, val = tag.split("=")
 							message_dict[key.strip()] = val.strip()
 
+			elif ":tmi.twitch.tv ROOMSTATE" in line:
+				"""Example message:
+				@room-id=136108665;subs-only=0 :tmi.twitch.tv ROOMSTATE #kaywee
+				"""
+				message_dict = {"message_type":"roomstate"}
+				line = line[1:] # remove leading @
+
+				msg_tags = (";".join(line.split("ROOMSTATE")[0].split(";")[:-1]) + ";" + (line.split("ROOMSTATE")[0].split(":")[-2]).split(";")[-1]).split(";") # dumb that I have to do this
+
+				for tag in msg_tags:
+					if "=" in tag: # sanity check - all should have key=value
+						key, val = tag.split("=")
+						message_dict[key.strip()] = val.strip()
 			else:
 				with open("verbose log.txt", "a", encoding="utf-8") as f:
 					f.write("Unrecognised line received in Chatbot: " + str(line) + "\n\n")
@@ -266,7 +290,15 @@ class ChatBot():
 		if not self.initialised:
 			raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
 
-		bytes_message = ("PRIVMSG #" + self.channel + " :" + msg + "\r\n").encode('utf-8')
+		msg = msg.replace("\r\n", "")
+		if len(msg) < 500:
+			bytes_message = ("PRIVMSG #" + self.channel + " :" + msg + "\r\n").encode('utf-8')
+		else:
+			bytes_message = "".encode('utf-8')
+			
+			for chunk in msg[::495]:
+				bytes_message += ("PRIVMSG #" + self.channel + " :" + chunk + "\r\n").encode('utf-8')
+
 		try:
 			self.socket.send(bytes_message)
 		except AttributeError:
@@ -278,7 +310,7 @@ class ChatBot():
 		if self.debug:
 			print("Sent pong.")
 
-	#def reset_socket(self):
-	#	"""Re-creates the socket object"""
-	#	del self.socket
-	#	self._open_socket()
+	def reset_socket(self):
+		"""Re-creates the socket object"""
+		del self.socket
+		self._open_socket()
