@@ -20,8 +20,8 @@ class ChatBot():
 
 	Keyword Args (optional):
 
-	debug=True (default: False)     - print debug messages to console
-	capabilities=[] (default: none) - a list of lowercase strings of additional capabilities to request - see https://dev.twitch.tv/docs/irc/guide/#twitch-irc-capabilities
+	debug=True      (default: False) - print debug messages to console
+	capabilities=[] (default: empty) - a list of lowercase strings of additional capabilities to request - see https://dev.twitch.tv/docs/irc/guide/#twitch-irc-capabilities
 	
 	"""
 
@@ -287,17 +287,13 @@ class ChatBot():
 
 	def send_message(self, msg):
 		"""Send a message to the channel."""
-		if not self.initialised:
-			raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
 
 		msg = msg.replace("\r\n", "")
-		if len(msg) < 500:
-			bytes_message = ("PRIVMSG #" + self.channel + " :" + msg + "\r\n").encode('utf-8')
-		else:
-			bytes_message = "".encode('utf-8')
-			
-			for chunk in msg[::495]:
-				bytes_message += ("PRIVMSG #" + self.channel + " :" + chunk + "\r\n").encode('utf-8')
+
+		bytes_message = "".encode('utf-8')
+		
+		for chunk in msg[::495]:
+			bytes_message += ("PRIVMSG #" + self.channel + " :" + chunk + "\r\n").encode('utf-8')
 
 		try:
 			self.socket.send(bytes_message)
