@@ -151,7 +151,11 @@ class ChatBot():
 		#if not self.initialised:
 		#	raise NotInitialisedException("The chatbot must be initialised before a message can be sent.")
 
-		next_bytes = self.socket.recv(4096).decode("utf-8")
+		try:
+			next_bytes = self.socket.recv(4096).decode("utf-8")
+		except AttributeError:
+			raise NotInitialisedException("The chatbot must be initialised before messages can be received.")
+			
 		lines = next_bytes.split("\r\n")
 
 		messages = []
@@ -168,10 +172,10 @@ class ChatBot():
 				continue
 
 			"""
-			As this uses "if x in line" to detect message types, in theory someone could send a message in chat
-			saying e.g. "hey guys tmi.twitch.tv NOTICE #", so that line would have both PRIVMSG and (e.g.) NOTICE
-			in it. By checking for PRIVMSG first, no matter the content of the message it will always be processed
-			as a chat message. Kind of like sanitising it. Sort of.
+			As this uses "if x in line" to detect message types, in theory someone could send a message in chat saying
+			 e.g. "hey guys tmi.twitch.tv NOTICE #", so that line would have both PRIVMSG and (e.g.) "tmi.twitch.tv NOTICE #"
+			in it. By checking for PRIVMSG first, no matter the content of the message it will always be processed as a chat 
+			message. Kind of like sanitising it. Sort of.
 			"""
 
 			message_dict = None # will be set to a dict below if message type is recognised
@@ -276,6 +280,17 @@ class ChatBot():
 					if "=" in tag: # sanity check - all should have key=value
 						key, val = tag.split("=")
 						message_dict[key.strip()] = val.strip()
+
+			elif line.startswith("@badge-info="):
+				message_dict = {"message_type":"badge-info"}
+				line = line[12:] # remove leading "@badge-info="
+
+				msg_tags = line.split(";")
+				for tag in msg_tags:
+					if "=" in tag: # sanity check - all should have key=value
+						key, val = tag.split("=")
+						message_dict[key.strip()] = val.strip()
+
 			else:
 				with open("verbose log.txt", "a", encoding="utf-8") as f:
 					f.write("Unrecognised line received in Chatbot: " + str(line) + "\n\n")
@@ -288,9 +303,10 @@ class ChatBot():
 	def send_message(self, msg):
 		"""Send a message to the channel."""
 
-		msg = msg.replace("\r\n", "")
+		msg = msg.replace("\n", " ").replace("\r", "")
 		if len(msg) < 500:
 			bytes_message = ("PRIVMSG #" + self.channel + " :" + msg + "\r\n").encode('utf-8')
+			self.socket.send(bytes_message)
 		else:
 			chr_limit = 495
 			
